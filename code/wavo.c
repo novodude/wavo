@@ -81,7 +81,7 @@ char *onelines[] =
 void oneliner_help(char *argument);
 void info_command(char *filename);
 int valid_command(char *filename, int flag);
-int volume_command(float amount, char *filename);
+int volume_command(char *amount, char *filename);
 int fade_command(char *type, char *filename);
 int reverse_command(char *filename);
 int swap_command(char *filename);
@@ -94,6 +94,8 @@ void put_line(char *filename);
 ChunkData find_data_chunk(FILE *file, uint32_t subchunk1_size);
 SamplesData read_samples(FILE *file, WavHeader header);
 int write_wav(char *filename, WavHeader header, SamplesData sample_data);
+char *get_filename(char **args, int arg_amount);
+char *make_output_filename(char *filename, char *suffex);
 
 
 int main(int argc, char *argv[])
@@ -115,7 +117,7 @@ int main(int argc, char *argv[])
 
   if (argc == 4)
   {
-    // four_arg_commands(argv);
+    four_arg_commands(argv);
   }
 
   if (argc == 5)
@@ -203,6 +205,37 @@ void three_arg_commands(char **args)
 
   }
 }
+
+
+void four_arg_commands(char **args)
+{
+  if (strcmp(args[1], "volume") == 0 || strcmp(args[1], "-V") == 0)
+  {
+    int is_valid = valid_command(args[3], 0);
+    if (is_valid == 1)
+    {
+      int success = volume_command(args[2], args[3]);
+      
+      if (success == 1)
+      {
+        printf("Success! Volume changed.");
+      }
+      else
+      {
+        printf("Failed! Volume didn't change.");
+      }
+    }
+  }
+  else if (strcmp(args[1], "fade") == 0 || strcmp(args[1], "-f") == 0)
+  {
+    int is_valid = valid_command(args[3], 0);
+  }
+}
+
+
+//------------------------------------------------
+//             commands functions
+//------------------------------------------------
 
 int valid_command(char *filename, int flag)
 {
@@ -309,6 +342,51 @@ void info_command(char *filename)
   put_line(filename);
 }
 
+
+int volume_command(char *amount, char *filename)
+{
+  FILE *file = fopen(filename, "rb");
+  if (file == NULL)
+  {
+    return 0;
+  }
+
+  float value = strtof(amount, NULL);
+  // read 44 byte or the header of the file
+  WavHeader header;
+  fread(&header, 1, sizeof(WavHeader), file);
+
+  SamplesData sample_data = read_samples(file, header);
+  if (sample_data.samples == NULL)
+  {
+    fclose(file);
+    return 0;
+  }
+
+
+  for (int sample = 0; sample < sample_data.num_samples; sample++)
+  {
+    sample_data.samples[sample] *= value;
+  }
+  
+  char *out_filename = make_output_filename(filename, amount);
+
+  int success = write_wav(out_filename, header, sample_data);
+  if (success != 1)
+  {
+    fclose(file);
+    return 0;
+  }
+  free(out_filename);
+  free(sample_data.samples);
+  fclose(file);
+  return 1;
+}
+
+//-------------------------------
+//            helpers
+//-------------------------------
+
 void put_line(char *filename)
 {
   for (int i = 0, filename_length = strlen(filename) + 15; i < filename_length; i++)
@@ -370,8 +448,28 @@ int write_wav(char *filename, WavHeader header, SamplesData sample_data)
   {
     return 0;
   }
+  
+  memcpy(header.subchunk2_id, "data", 4);
+  header.subchunk2_size = sample_data.num_samples * sizeof(int16_t);
+  
   fwrite(&header, sizeof(WavHeader), 1, file);
   fwrite(sample_data.samples, sizeof(int16_t), sample_data.num_samples, file);
   fclose(file);
   return 1;
+}
+
+char *make_output_filename(char *filename, char *suffex)
+{
+  int string_len = strlen(filename) + strlen(suffex) + 2;
+  char *result = malloc(string_len * sizeof(char));
+  
+  strcpy(result, filename);
+  char *wav = strstr(result, ".wav");
+  *wav = '\0';
+
+  strcat(result, "_");
+  strcat(result, suffex);
+  strcat(result, ".wav");
+
+  return result;
 }
