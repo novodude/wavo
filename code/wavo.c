@@ -96,6 +96,7 @@ SamplesData read_samples(FILE *file, WavHeader header);
 int write_wav(char *filename, WavHeader header, SamplesData sample_data);
 char *get_filename(char **args, int arg_amount);
 char *make_output_filename(char *filename, char *suffex);
+void reverse_samples(SamplesData *sample_data, uint16_t channels);
 
 
 int main(int argc, char *argv[])
@@ -198,7 +199,19 @@ void three_arg_commands(char **args)
   }
   else if (strcmp(args[1], "reverse") == 0 || strcmp(args[1], "-r") == 0)
   {
-
+    int is_valid = valid_command(args[2], 0);
+    if (is_valid == 1)
+    {
+      int success = reverse_command(args[2]);
+      if (success == 1)
+      {
+        printf("Success! File reversed.");
+      }
+      else
+      {
+        printf("Failed! File didn't reverse.");
+      }
+    }
   }
   else if (strcmp(args[1], "swap") == 0 || strcmp(args[1], "-s") == 0)
   {
@@ -383,6 +396,43 @@ int volume_command(char *amount, char *filename)
   return 1;
 }
 
+int reverse_command(char *filename)
+{
+  FILE *file = fopen(filename, "rb");
+  if (file == NULL)
+  {
+    return 0;
+  }
+
+  // read 44 byte or the header of the file
+  WavHeader header;
+  fread(&header, 1, sizeof(WavHeader), file);
+
+  SamplesData sample_data = read_samples(file, header);
+  if (sample_data.samples == NULL)
+  {
+    fclose(file);
+    return 0;
+  }
+
+  reverse_samples(&sample_data, header.num_channels);
+  
+  char *out_filename = make_output_filename(filename, "reversed");
+
+  int success = write_wav(out_filename, header, sample_data);
+  if (success != 1)
+  {
+    fclose(file);
+    return 0;
+  }
+  
+  free(out_filename);
+  free(sample_data.samples);
+  fclose(file);
+  
+  return 1;
+}
+
 //-------------------------------
 //            helpers
 //-------------------------------
@@ -472,4 +522,32 @@ char *make_output_filename(char *filename, char *suffex)
   strcat(result, ".wav");
 
   return result;
+}
+
+void reverse_samples(SamplesData *sample_data, uint16_t channels)
+{
+    uint32_t frame_count = sample_data->num_samples / channels;
+
+    for (uint32_t frame = 0; frame < frame_count / 2; frame++)
+    {
+        uint32_t opposite = frame_count - 1 - frame;
+
+        for (uint16_t channel = 0; channel < channels; channel++)
+        {
+            uint32_t left_index =
+                frame * channels + channel;
+
+            uint32_t right_index =
+                opposite * channels + channel;
+
+            int16_t temp =
+                sample_data->samples[left_index];
+
+            sample_data->samples[left_index] =
+                sample_data->samples[right_index];
+
+            sample_data->samples[right_index] =
+                temp;
+        }
+    }
 }
